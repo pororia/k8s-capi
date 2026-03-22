@@ -1,0 +1,42 @@
+server:
+  host: "0.0.0.0"
+  port: 8080
+  mode: "debug"  # debug | release
+
+database:
+  host: "localhost"
+  port: 5432
+  name: "k8s_cmp"
+  user: "cmp"
+  password: "${DB_PASSWORD}"
+  ssl_mode: "disable"
+  max_open_conns: 25
+  max_idle_conns: 10
+
+redis:
+  host: "localhost"
+  port: 6379
+  password: "${REDIS_PASSWORD}"
+  db: 0
+
+nats:
+  url: "nats://localhost:4222"
+  stream_name: "CMP_TASKS"
+
+auth:
+  jwt_secret: "${JWT_SECRET}"
+  access_token_ttl: "15m"
+  refresh_token_ttl: "7d"
+
+management_cluster:
+  kubeconfig_path: "/etc/cmp/kubeconfig"
+  # 또는 in-cluster 모드 시 비워둠
+  in_cluster: false
+
+encryption:
+  key: "${ENCRYPTION_KEY}"  # AES-256-GCM 키 (32 bytes, base64 인코딩)
+
+cors:
+  allowed_origins:
+    - "http://localhost:3000"
+    - "https://cmp.example.com"

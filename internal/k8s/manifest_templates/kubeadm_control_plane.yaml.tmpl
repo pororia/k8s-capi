@@ -1,0 +1,26 @@
+apiVersion: controlplane.cluster.x-k8s.io/v1beta1
+kind: KubeadmControlPlane
+metadata:
+  name: {{ .ClusterName }}-control-plane
+  namespace: {{ .Namespace }}
+spec:
+  replicas: {{ .ControlPlaneCount }}
+  version: {{ .KubernetesVersion }}
+  machineTemplate:
+    infrastructureRef:
+      apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+      kind: OpenStackMachineTemplate
+      name: {{ .ClusterName }}-control-plane
+  kubeadmConfigSpec:
+    clusterConfiguration:
+      networking:
+        podSubnet: {{ .PodCIDR }}
+        serviceSubnet: {{ .ServiceCIDR }}
+    initConfiguration:
+      nodeRegistration:
+        kubeletExtraArgs:
+          cloud-provider: external
+    joinConfiguration:
+      nodeRegistration:
+        kubeletExtraArgs:
+          cloud-provider: external

@@ -1,0 +1,34 @@
+# Go
+bin/
+*.exe
+*.test
+*.out
+vendor/
+
+# Frontend
+web/node_modules/
+web/.next/
+web/out/
+
+# 환경/시크릿
+*.env
+.env.*
+configs/config.yaml
+!configs/config.example.yaml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Docker volumes
+data/
+
+# 빌드 산출물
+dist/
+tmp/

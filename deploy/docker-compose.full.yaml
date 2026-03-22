@@ -1,0 +1,162 @@
+version: '3.8'
+
+# 사용 전 필수 설정:
+#   1. KUBECONFIG 환경변수 또는 ~/.kube/config 파일 (Management Cluster 접근용)
+#   2. .env 파일 생성 (아래 .env.example 참조)
+#
+# .env.example:
+#   AUTH_JWT_SECRET=your-very-long-jwt-secret-key-here
+#   ENCRYPTION_KEY=base64-encoded-32-byte-key-here==
+#
+# AES-256 키 생성법:
+#   openssl rand -base64 32
+
+services:
+  # ─── Infrastructure ─────────────────────────────────────────────────────────
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: k8s_cmp
+      POSTGRES_USER: cmp
+      POSTGRES_PASSWORD: cmp_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cmp -d k8s_cmp"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  nats:
+    image: nats:2.10-alpine
+    command: --jetstream --store_dir /data
+    volumes:
+      - nats_data:/data
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8222/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─── DB Migration ────────────────────────────────────────────────────────────
+
+  migrator:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    command: ./migrator -action=up
+    environment:
+      # viper AutomaticEnv: database.host → DATABASE_HOST
+      DATABASE_HOST: postgres
+      DATABASE_PORT: 5432
+      DATABASE_NAME: k8s_cmp
+      DATABASE_USER: cmp
+      DATABASE_PASSWORD: cmp_password
+      DATABASE_SSL_MODE: disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # ─── Backend API ─────────────────────────────────────────────────────────────
+
+  api:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    command: ./api-server
+    ports:
+      - "8080:8080"
+    environment:
+      # Server
+      SERVER_PORT: 8080
+      SERVER_MODE: release
+      # Database  (viper: database.* → DATABASE_*)
+      DATABASE_HOST: postgres
+      DATABASE_PORT: 5432
+      DATABASE_NAME: k8s_cmp
+      DATABASE_USER: cmp
+      DATABASE_PASSWORD: cmp_password
+      DATABASE_SSL_MODE: disable
+      # Redis     (viper: redis.* → REDIS_*)
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      # NATS      (viper: nats.url → NATS_URL)
+      NATS_URL: nats://nats:4222
+      # Auth      (viper: auth.jwt_secret → AUTH_JWT_SECRET)
+      AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:-change-me-in-production}
+      # Encryption (viper: encryption.key → ENCRYPTION_KEY)
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-Y2hhbmdlLW1lLWluLXByb2R1Y3Rpb24tMzJieXRla2V5}
+      # Management Cluster (viper: management_cluster.kubeconfig_path → MANAGEMENT_CLUSTER_KUBECONFIG_PATH)
+      MANAGEMENT_CLUSTER_KUBECONFIG_PATH: /etc/cmp/kubeconfig
+      MANAGEMENT_CLUSTER_IN_CLUSTER: "false"
+      # CORS
+      CORS_ALLOWED_ORIGINS: "http://localhost:3000"
+    volumes:
+      # Management Cluster kubeconfig 마운트 (필수!)
+      # ~/.kube/config 또는 별도 kubeconfig 파일 경로로 변경하세요
+      - ${KUBECONFIG:-~/.kube/config}:/etc/cmp/kubeconfig:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+      migrator:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  # ─── NATS Worker ─────────────────────────────────────────────────────────────
+
+  worker:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    command: ./worker
+    environment:
+      DATABASE_HOST: postgres
+      DATABASE_PORT: 5432
+      DATABASE_NAME: k8s_cmp
+      DATABASE_USER: cmp
+      DATABASE_PASSWORD: cmp_password
+      DATABASE_SSL_MODE: disable
+      NATS_URL: nats://nats:4222
+      MANAGEMENT_CLUSTER_KUBECONFIG_PATH: /etc/cmp/kubeconfig
+      MANAGEMENT_CLUSTER_IN_CLUSTER: "false"
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-Y2hhbmdlLW1lLWluLXByb2R1Y3Rpb24tMzJieXRla2V5}
+    volumes:
+      - ${KUBECONFIG:-~/.kube/config}:/etc/cmp/kubeconfig:ro
+    depends_on:
+      - api
+    restart: unless-stopped
+
+  # ─── Frontend ────────────────────────────────────────────────────────────────
+
+  web:
+    build:
+      context: ../web
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: http://api:8080
+    depends_on:
+      - api
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+  nats_data:

@@ -1,0 +1,16 @@
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: OpenStackMachineTemplate
+metadata:
+  name: {{ .ClusterName }}-control-plane
+  namespace: {{ .Namespace }}
+spec:
+  template:
+    spec:
+      flavor: {{ .CPFlavor }}
+      image:
+        filter:
+          name: {{ .OSImage }}
+      sshKeyName: {{ .SSHKeyName }}
+      identityRef:
+        cloudName: {{ .CloudName }}
+        name: {{ .ClusterName }}-cloud-config
